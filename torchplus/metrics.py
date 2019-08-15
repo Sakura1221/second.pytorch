@@ -7,14 +7,14 @@ from torch import nn
 class Scalar(nn.Module):
     def __init__(self):
         super().__init__()
-        self.register_buffer('total', torch.FloatTensor([0.0]))
+        self.register_buffer('total', torch.FloatTensor([0.0])) # self.register_buffer可以将tensor注册成buffer,只在forward更新,不进行优化,定义一个浮点数
         self.register_buffer('count', torch.FloatTensor([0.0]))
 
     def forward(self, scalar):
-        if not scalar.eq(0.0):
+        if not scalar.eq(0.0): # 如果不等于0
             self.count += 1
-            self.total += scalar.data.float()
-        return self.value.cpu()
+            self.total += scalar.data.float() # 数据格式转换
+        return self.value.cpu() # 转换成cpu上的tensor,调用自身value方法
 
     @property
     def value(self):
@@ -104,18 +104,18 @@ class Precision(nn.Module):
         pred_falses = pred_labels == 0
         trues = labels > 0
         falses = labels == 0
-        true_positives = (weights * (trues & pred_trues).float()).sum()
-        true_negatives = (weights * (falses & pred_falses).float()).sum()
-        false_positives = (weights * (falses & pred_trues).float()).sum()
-        false_negatives = (weights * (trues & pred_falses).float()).sum()
-        count = true_positives + false_positives
+        true_positives = (weights * (trues & pred_trues).float()).sum() # TP值
+        true_negatives = (weights * (falses & pred_falses).float()).sum() # TN值
+        false_positives = (weights * (falses & pred_trues).float()).sum() # FP值
+        false_negatives = (weights * (trues & pred_falses).float()).sum() # FN值
+        count = true_positives + false_positives # 预测框总数
         # print(count, true_positives)
         if count > 0:
             self.count += count
             self.total += true_positives
         return self.value.cpu()
         # return (total /  num_examples.data).cpu()
-    @property
+    @property # 属性装饰器
     def value(self):
         return self.total / self.count
     def clear(self):

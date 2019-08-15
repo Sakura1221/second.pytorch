@@ -235,7 +235,7 @@ def create_groundtruth_database(data_path,
         P2 = info['calib/P2']
         Trv2c = info['calib/Tr_velo_to_cam']
         if not lidar_only:
-            points = box_np_ops.remove_outside_points(points, rect, Trv2c, P2,
+            points = box_np_ops.remove_outside_points(points, rect, Trv2c, P2, # 去除了相机视角外部的点云
                                                         info["img_shape"])
 
         annos = info["annos"]
@@ -263,7 +263,7 @@ def create_groundtruth_database(data_path,
             filepath = database_save_path / filename
             gt_points = points[point_indices[:, i]]
 
-            gt_points[:, :3] -= rbbox_lidar[i, :3]
+            gt_points[:, :3] -= rbbox_lidar[i, :3] # 这里用点云原始坐标减去目标位置(中心点坐标)，并非直接输出真值框中点的坐标
             with open(filepath, 'w') as f:
                 gt_points.tofile(f)
             if names[i] in used_classes:

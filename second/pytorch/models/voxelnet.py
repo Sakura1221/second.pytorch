@@ -312,7 +312,7 @@ class MiddleExtractor(nn.Module):
         return ret
 
 
-class RPN(nn.Module):
+class RPN(nn.Module): # 核心SSD网络
     def __init__(self,
                  use_norm=True,
                  num_class=2,
@@ -376,7 +376,7 @@ class RPN(nn.Module):
             )
             block2_input_filters += 64
 
-        self.block1 = Sequential(
+        self.block1 = Sequential( # 用自建的Sequential模块建立block1
             nn.ZeroPad2d(1),
             Conv2d(
                 num_input_filters, num_filters[0], 3, stride=layer_strides[0]),
@@ -388,7 +388,7 @@ class RPN(nn.Module):
                 Conv2d(num_filters[0], num_filters[0], 3, padding=1))
             self.block1.add(BatchNorm2d(num_filters[0]))
             self.block1.add(nn.ReLU())
-        self.deconv1 = Sequential(
+        self.deconv1 = Sequential( # 用自建的Sequential模块建立deconv1
             ConvTranspose2d(
                 num_filters[0],
                 num_upsample_filters[0],
@@ -397,7 +397,7 @@ class RPN(nn.Module):
             BatchNorm2d(num_upsample_filters[0]),
             nn.ReLU(),
         )
-        self.block2 = Sequential(
+        self.block2 = Sequential( # 用自建的Sequential模块建立block2
             nn.ZeroPad2d(1),
             Conv2d(
                 block2_input_filters,
@@ -412,7 +412,7 @@ class RPN(nn.Module):
                 Conv2d(num_filters[1], num_filters[1], 3, padding=1))
             self.block2.add(BatchNorm2d(num_filters[1]))
             self.block2.add(nn.ReLU())
-        self.deconv2 = Sequential(
+        self.deconv2 = Sequential( # 用自建的Sequential模块建立deconv2
             ConvTranspose2d(
                 num_filters[1],
                 num_upsample_filters[1],
@@ -421,7 +421,7 @@ class RPN(nn.Module):
             BatchNorm2d(num_upsample_filters[1]),
             nn.ReLU(),
         )
-        self.block3 = Sequential(
+        self.block3 = Sequential( # 用自建的Sequential模块建立block3
             nn.ZeroPad2d(1),
             Conv2d(num_filters[1], num_filters[2], 3, stride=layer_strides[2]),
             BatchNorm2d(num_filters[2]),
@@ -432,7 +432,7 @@ class RPN(nn.Module):
                 Conv2d(num_filters[2], num_filters[2], 3, padding=1))
             self.block3.add(BatchNorm2d(num_filters[2]))
             self.block3.add(nn.ReLU())
-        self.deconv3 = Sequential(
+        self.deconv3 = Sequential( # 用自建的Sequential模块建立deconv3
             ConvTranspose2d(
                 num_filters[2],
                 num_upsample_filters[2],
@@ -452,10 +452,17 @@ class RPN(nn.Module):
             self.conv_dir_cls = nn.Conv2d(
                 sum(num_upsample_filters), num_anchor_per_loc * 2, 1)
 
-    def forward(self, x, bev=None):
+    """
+    Args x: 2帧数据所有体素的VFE特征,[2,64,496,432]
+    Returns: ret_dict{
+             "box_preds": [2,248,216,14],方盒回归结果是偏移值
+             "cls_preds": [2,248,216,2],类别分类结果是未归一化的某一类别得分(不包括背景)
+             "dir_cls_preds": [2,248,216,4],方向分类结果是未归一化的正负方向类别得分}
+    """
+    def forward(self, x, bev=None): # 模型组块通过init搭建,forward实际上就是在组合组块并喂数据
         x = self.block1(x)
         up1 = self.deconv1(x)
-        if self._use_bev:
+        if self._use_bev: # False
             bev[:, -1] = torch.clamp(
                 torch.log(1 + bev[:, -1]) / np.log(16.0), max=1.0)
             x = torch.cat([x, self.bev_extractor(bev)], dim=1)
@@ -473,7 +480,7 @@ class RPN(nn.Module):
             "box_preds": box_preds,
             "cls_preds": cls_preds,
         }
-        if self._use_direction_classifier:
+        if self._use_direction_classifier: # True
             dir_cls_preds = self.conv_dir_cls(x)
             dir_cls_preds = dir_cls_preds.permute(0, 2, 3, 1).contiguous()
             ret_dict["dir_cls_preds"] = dir_cls_preds
@@ -497,7 +504,7 @@ class VoxelNet(nn.Module):
                  middle_class_name="SparseMiddleExtractor",
                  middle_num_filters_d1=[64],
                  middle_num_filters_d2=[64, 64],
-                 rpn_class_name="RPN",
+                 rpn_class_name="RPN", # SSD前端特征提取层参数
                  rpn_layer_nums=[3, 5, 5],
                  rpn_layer_strides=[2, 2, 2],
                  rpn_num_filters=[128, 128, 256],
@@ -614,7 +621,7 @@ class VoxelNet(nn.Module):
         rpn_class_dict = {
             "RPN": RPN,
         }
-        rpn_class = rpn_class_dict[rpn_class_name]
+        rpn_class = rpn_class_dict[rpn_class_name] # RPN,通过这个办法选择模型
         self.rpn = rpn_class(
             use_norm=True,
             num_class=num_class,
@@ -632,6 +639,7 @@ class VoxelNet(nn.Module):
             num_groups=num_groups,
             box_code_size=target_assigner.box_coder.code_size)
 
+        # 评价指标也都包装成一个个神经层,包含很多评价指标类的实例,以供infer得到结果后计算评价指标
         self.rpn_acc = metrics.Accuracy(
             dim=-1, encode_background_as_zeros=encode_background_as_zeros)
         self.rpn_precision = metrics.Precision(dim=-1)
@@ -660,89 +668,95 @@ class VoxelNet(nn.Module):
         num_points = example["num_points"]
         coors = example["coordinates"]
         batch_anchors = example["anchors"]
-        batch_size_dev = batch_anchors.shape[0]
-        t = time.time()
+        batch_size_dev = batch_anchors.shape[0] # 2
+        t = time.time() # 计时开始
+        voxel_features = self.voxel_feature_extractor(voxels, num_points, coors) # 提取VFE特征,(num_voxels,64)
         # features: [num_voxels, max_num_points_per_voxel, 7]
         # num_points: [num_voxels]
         # coors: [num_voxels, 4]
-        voxel_features = self.voxel_feature_extractor(voxels, num_points, coors)
-        if self._use_sparse_rpn:
+        if self._use_sparse_rpn: # False
             preds_dict = self.sparse_rpn(voxel_features, coors, batch_size_dev)
         else:
-            spatial_features = self.middle_feature_extractor(
-                voxel_features, coors, batch_size_dev)
-            if self._use_bev:
+            spatial_features = self.middle_feature_extractor( # 空间特征,Args:voxel_features:(num_voxels,64),coors:2帧数据的坐标索引(num_voxels,4),batchsize_dev:2
+                voxel_features, coors, batch_size_dev) # 2帧数据内所有体素的64通道特征,y前后索引,x左右索引[2, 64, 496, 432]
+            if self._use_bev: # False
                 preds_dict = self.rpn(spatial_features, example["bev_map"])
             else:
-                preds_dict = self.rpn(spatial_features)
+                preds_dict = self.rpn(spatial_features) # 向SSD网络输入空间特征进行推理,得到预测值
         # preds_dict["voxel_features"] = voxel_features
         # preds_dict["spatial_features"] = spatial_features
         box_preds = preds_dict["box_preds"]
         cls_preds = preds_dict["cls_preds"]
-        self._total_forward_time += time.time() - t
+        self._total_forward_time += time.time() - t # 计时结束
         if self.training:
             labels = example['labels']
             reg_targets = example['reg_targets']
 
+            """
+            cls_weights: 分类权重,[2,total_anchors],正负样本都置1,dontcare置0,根据正样本数归一化
+            reg_weights: 回归权重,[2,total_anchors],正样本置１,其余置0,根据正样本数归一化
+            cared: 正负锚框置1,dontcare置0,[2,total_anchors],满足条件的置1,其余置0
+            """
             cls_weights, reg_weights, cared = prepare_loss_weights(
                 labels,
-                pos_cls_weight=self._pos_cls_weight,
-                neg_cls_weight=self._neg_cls_weight,
-                loss_norm_type=self._loss_norm_type,
+                pos_cls_weight=self._pos_cls_weight, # 1.0
+                neg_cls_weight=self._neg_cls_weight, # 1.0
+                loss_norm_type=self._loss_norm_type, # norm_by_num_positives
                 dtype=voxels.dtype)
-            cls_targets = labels * cared.type_as(labels)
-            cls_targets = cls_targets.unsqueeze(-1)
+            cls_targets = labels * cared.type_as(labels) # 将dontcare置0
+            cls_targets = cls_targets.unsqueeze(-1) # 搭建网络需要,增加一个维度[2,total_anchors,1]
 
-            loc_loss, cls_loss = create_loss(
-                self._loc_loss_ftor,
-                self._cls_loss_ftor,
-                box_preds=box_preds,
+            loc_loss, cls_loss = create_loss( # 分类和回归loss函数传参
+                self._loc_loss_ftor, # 回归loss函数
+                self._cls_loss_ftor, # 分类loss函数
+                box_preds=box_preds, # 预测值
                 cls_preds=cls_preds,
                 cls_targets=cls_targets,
-                cls_weights=cls_weights,
+                cls_weights=cls_weights, # 正负样本置1，dontcare置0,根据正样本数归一化
                 reg_targets=reg_targets,
-                reg_weights=reg_weights,
+                reg_weights=reg_weights, # 正样本置１,其余置0,根据正样本数归一化
                 num_class=self._num_class,
-                encode_rad_error_by_sin=self._encode_rad_error_by_sin,
-                encode_background_as_zeros=self._encode_background_as_zeros,
-                box_code_size=self._box_coder.code_size,
+                encode_rad_error_by_sin=self._encode_rad_error_by_sin, # True
+                encode_background_as_zeros=self._encode_background_as_zeros, # True
+                box_code_size=self._box_coder.code_size, # 7
             )
-            loc_loss_reduced = loc_loss.sum() / batch_size_dev
-            loc_loss_reduced *= self._loc_loss_weight
-            cls_pos_loss, cls_neg_loss = _get_pos_neg_loss(cls_loss, labels)
+            loc_loss_reduced = loc_loss.sum() / batch_size_dev # 定位损失求和除以batchsize
+            loc_loss_reduced *= self._loc_loss_weight # 乘以定位损失权重
+            cls_pos_loss, cls_neg_loss = _get_pos_neg_loss(cls_loss, labels) # 正负样本分类损失分别求和,再除以batchsize
             cls_pos_loss /= self._pos_cls_weight
             cls_neg_loss /= self._neg_cls_weight
-            cls_loss_reduced = cls_loss.sum() / batch_size_dev
-            cls_loss_reduced *= self._cls_loss_weight
+            cls_loss_reduced = cls_loss.sum() / batch_size_dev # 分类损失求和除以batchsize
+            cls_loss_reduced *= self._cls_loss_weight # 乘以分类损失权重
             loss = loc_loss_reduced + cls_loss_reduced
             if self._use_direction_classifier:
-                dir_targets = get_direction_target(example['anchors'],
+                dir_targets = get_direction_target(example['anchors'], # 编码真值方盒角度的正负,结合之前回归计算出的角度即可确定朝向
                                                    reg_targets)
                 dir_logits = preds_dict["dir_cls_preds"].view(
                     batch_size_dev, -1, 2)
-                weights = (labels > 0).type_as(dir_logits)
+                weights = (labels > 0).type_as(dir_logits) # 正样本为1,其他为0
                 weights /= torch.clamp(weights.sum(-1, keepdim=True), min=1.0)
                 dir_loss = self._dir_loss_ftor(
                     dir_logits, dir_targets, weights=weights)
                 dir_loss = dir_loss.sum() / batch_size_dev
-                loss += dir_loss * self._direction_loss_weight
+                loss += dir_loss * self._direction_loss_weight # 加上方向损失
 
             return {
-                "loss": loss,
-                "cls_loss": cls_loss,
-                "loc_loss": loc_loss,
-                "cls_pos_loss": cls_pos_loss,
-                "cls_neg_loss": cls_neg_loss,
+                "loss": loss, # loc_loss_reduced + cls_loss_reduced + dir_loss_reduced(加权相加)
+                "cls_loss": cls_loss, # [2,107136,1]每个锚框的分类loss
+                "loc_loss": loc_loss, # [2,107136,7]每个锚框的定位loss
+                "cls_pos_loss": cls_pos_loss, # 正样本分类损失每帧平均值,然后正样本加权
+                "cls_neg_loss": cls_neg_loss, # 负样本分类损失每帧平均值,然后负样本加权
                 "cls_preds": cls_preds,
-                "dir_loss_reduced": dir_loss,
+                "dir_loss_reduced": dir_loss, # 两帧数据内各loss的每帧平均值
                 "cls_loss_reduced": cls_loss_reduced,
                 "loc_loss_reduced": loc_loss_reduced,
-                "cared": cared,
+                "cared": cared, # 大于一个体素的锚框标志,[2,total_anchors],满足条件的置1,其余置0
             }
         else:
             return self.predict(example, preds_dict)
 
-    def predict(self, example, preds_dict):
+    def predict(self, example, preds_dict): # 预测模块
+        ### 第一部分读取SSD网络预测数据
         t = time.time()
         batch_size = example['anchors'].shape[0]
         batch_anchors = example["anchors"].view(batch_size, -1, 7)
@@ -764,19 +778,20 @@ class VoxelNet(nn.Module):
         batch_box_preds = batch_box_preds.view(batch_size, -1,
                                                self._box_coder.code_size)
         num_class_with_bg = self._num_class
-        if not self._encode_background_as_zeros:
+        if not self._encode_background_as_zeros: # False
             num_class_with_bg = self._num_class + 1
 
-        batch_cls_preds = batch_cls_preds.view(batch_size, -1,
+        batch_cls_preds = batch_cls_preds.view(batch_size, -1, # 最终预测类别
                                                num_class_with_bg)
-        batch_box_preds = self._box_coder.decode_torch(batch_box_preds,
+        batch_box_preds = self._box_coder.decode_torch(batch_box_preds, # 最终预测方框
                                                        batch_anchors)
-        if self._use_direction_classifier:
+        if self._use_direction_classifier: # True
             batch_dir_preds = preds_dict["dir_cls_preds"]
             batch_dir_preds = batch_dir_preds.view(batch_size, -1, 2)
         else:
             batch_dir_preds = [None] * batch_size
 
+        ### 第二部分根据网络预测数据计算最终预测结果
         predictions_dicts = []
         for box_preds, cls_preds, dir_preds, rect, Trv2c, P2, img_idx, a_mask in zip(
                 batch_box_preds, batch_cls_preds, batch_dir_preds, batch_rect,
@@ -789,11 +804,11 @@ class VoxelNet(nn.Module):
                 if a_mask is not None:
                     dir_preds = dir_preds[a_mask]
                 # print(dir_preds.shape)
-                dir_labels = torch.max(dir_preds, dim=-1)[1]
+                dir_labels = torch.max(dir_preds, dim=-1)[1] # 方向类别得分高的作为方向
             if self._encode_background_as_zeros:
                 # this don't support softmax
                 assert self._use_sigmoid_score is True
-                total_scores = torch.sigmoid(cls_preds)
+                total_scores = torch.sigmoid(cls_preds) # 归一化的类别得分,即类别概率,包括背景
             else:
                 # encode background as first element in one-hot vector
                 if self._use_sigmoid_score:
@@ -801,16 +816,16 @@ class VoxelNet(nn.Module):
                 else:
                     total_scores = F.softmax(cls_preds, dim=-1)[..., 1:]
             # Apply NMS in birdeye view
-            if self._use_rotate_nms:
+            if self._use_rotate_nms: # False
                 nms_func = box_torch_ops.rotate_nms
             else:
-                nms_func = box_torch_ops.nms
+                nms_func = box_torch_ops.nms # 普通NMS函数
             selected_boxes = None
             selected_labels = None
             selected_scores = None
             selected_dir_labels = None
 
-            if self._multiclass_nms:
+            if self._multiclass_nms: # False
                 # curently only support class-agnostic boxes.
                 boxes_for_nms = box_preds[:, [0, 1, 3, 4, 6]]
                 if not self._use_rotate_nms:
@@ -856,6 +871,7 @@ class VoxelNet(nn.Module):
             else:
                 # get highest score per prediction, than apply nms
                 # to remove overlapped box.
+                # 取每个锚框预测类别最高分,并应用NMS去掉重叠锚框
                 if num_class_with_bg == 1:
                     top_scores = total_scores.squeeze(-1)
                     top_labels = torch.zeros(
@@ -867,7 +883,7 @@ class VoxelNet(nn.Module):
 
                 if self._nms_score_threshold > 0.0:
                     thresh = torch.tensor(
-                        [self._nms_score_threshold],
+                        [self._nms_score_threshold], # 0.05归一化得分阈值(不包括背景分)
                         device=total_scores.device).type_as(total_scores)
                     top_scores_keep = (top_scores >= thresh)
                     top_scores = top_scores.masked_select(top_scores_keep)
@@ -885,7 +901,7 @@ class VoxelNet(nn.Module):
                         boxes_for_nms = box_torch_ops.corner_to_standup_nd(
                             box_preds_corners)
                     # the nms in 3d detection just remove overlap boxes.
-                    selected = nms_func(
+                    selected = nms_func( # 返回过滤后的方盒预测值索引
                         boxes_for_nms,
                         top_scores,
                         pre_max_size=self._nms_pre_max_size,
@@ -894,14 +910,15 @@ class VoxelNet(nn.Module):
                     )
                 else:
                     selected = None
-                if selected is not None:
+                if selected is not None: # 过滤后的方盒预测值
                     selected_boxes = box_preds[selected]
                     if self._use_direction_classifier:
                         selected_dir_labels = dir_labels[selected]
                     selected_labels = top_labels[selected]
                     selected_scores = top_scores[selected]
-            # finally generate predictions.
 
+            # finally generate predictions.
+            # 生成最终的预测
             if selected_boxes is not None:
                 box_preds = selected_boxes
                 scores = selected_scores
@@ -939,14 +956,14 @@ class VoxelNet(nn.Module):
                 box_2d_preds = torch.cat([minxy, maxxy], dim=1)
                 # predictions
                 predictions_dict = {
-                    "bbox": box_2d_preds,
-                    "box3d_camera": final_box_preds_camera,
-                    "box3d_lidar": final_box_preds,
-                    "scores": final_scores,
-                    "label_preds": label_preds,
-                    "image_idx": img_idx,
+                    "bbox": box_2d_preds, # 相机坐标前视图2d方盒,(num_objects,4)(xmin,ymin,xmax,ymax)
+                    "box3d_camera": final_box_preds_camera, # 相机坐标下3d方盒,(num_objects,7),xyz_camera,lhwr
+                    "box3d_lidar": final_box_preds, # 雷达坐标下3d方盒,(num_objects,7),xyz_lidar,wlhr
+                    "scores": final_scores, # 类别预测归一化得分,除了背景最高得分,(num_objects,)
+                    "label_preds": label_preds, # 预测类别数字标号,除了背景分数最高类别,(num_objects,)
+                    "image_idx": img_idx, # 图像索引
                 }
-            else:
+            else: # 如果没有目标类别对象
                 predictions_dict = {
                     "bbox": None,
                     "box3d_camera": None,
@@ -955,7 +972,7 @@ class VoxelNet(nn.Module):
                     "label_preds": None,
                     "image_idx": img_idx,
                 }
-            predictions_dicts.append(predictions_dict)
+            predictions_dicts.append(predictions_dict) # 将预测结果字典加入列表
         self._total_postprocess_time += time.time() - t
         return predictions_dicts
 
@@ -1031,7 +1048,7 @@ class VoxelNet(nn.Module):
         return net
 
 
-def add_sin_difference(boxes1, boxes2):
+def add_sin_difference(boxes1, boxes2): # sin(a-b)=sina*cosb-cosa*sinb
     rad_pred_encoding = torch.sin(boxes1[..., -1:]) * torch.cos(
         boxes2[..., -1:])
     rad_tg_encoding = torch.cos(boxes1[..., -1:]) * torch.sin(boxes2[..., -1:])
@@ -1039,14 +1056,27 @@ def add_sin_difference(boxes1, boxes2):
     boxes2 = torch.cat([boxes2[..., :-1], rad_tg_encoding], dim=-1)
     return boxes1, boxes2
 
-
+"""
+Args:
+loc_loss_ftor:定位损失类的实例对象,Smooth L1 Loss,对L1 loss的分段修正
+cls_loss_ftor:分类损失类的实例对象,Focal Loss,对cross entropy的加权修正
+cls_target:分类目标,独热码,背景编码为0
+cls_preds:分类预测结果为类别分数,后经过softmax(针对tensor的sigmoid)可求类别概率值
+cls_weights:正负样本置1,dontcare置0,除以正样本数求均值(可选择)
+reg_targets:回归目标,锚框相对真值框的偏移值编码
+reg_preds:回归预测结果为偏移值编码
+reg_weights:正样本置1,其他置0,除以正样本数求均值(可选择)
+Rets:
+loc_losses:定位回归损失,[2,107136,7]
+cls_losses:分类损失,[2,107136,1]
+"""
 def create_loss(loc_loss_ftor,
                 cls_loss_ftor,
-                box_preds,
+                box_preds, # 回归预测值也只回归编码的偏移值,后续还需要解码
                 cls_preds,
                 cls_targets,
                 cls_weights,
-                reg_targets,
+                reg_targets, # 所有锚框与对应真值框编码后的偏移,xyz_lidar,w,l,h,r
                 reg_weights,
                 num_class,
                 encode_background_as_zeros=True,
@@ -1054,39 +1084,40 @@ def create_loss(loc_loss_ftor,
                 box_code_size=7):
     batch_size = int(box_preds.shape[0])
     box_preds = box_preds.view(batch_size, -1, box_code_size)
-    if encode_background_as_zeros:
+    if encode_background_as_zeros: # True
         cls_preds = cls_preds.view(batch_size, -1, num_class)
     else:
         cls_preds = cls_preds.view(batch_size, -1, num_class + 1)
     cls_targets = cls_targets.squeeze(-1)
-    one_hot_targets = torchplus.nn.one_hot(
+    # classify = cls_targets.cpu().numpy()
+    one_hot_targets = torchplus.nn.one_hot( # 独热码,增加背景一个类别
         cls_targets, depth=num_class + 1, dtype=box_preds.dtype)
-    if encode_background_as_zeros:
-        one_hot_targets = one_hot_targets[..., 1:]
-    if encode_rad_error_by_sin:
+    if encode_background_as_zeros: # True
+        one_hot_targets = one_hot_targets[..., 1:] # 训练用独热码去掉了背景类别
+    if encode_rad_error_by_sin: # 角度回归误差使用sin进行归一化,但是无法区分朝向角还是其补角
         # sin(a - b) = sinacosb-cosasinb
         box_preds, reg_targets = add_sin_difference(box_preds, reg_targets)
-    loc_losses = loc_loss_ftor(
+    loc_losses = loc_loss_ftor( # [2,107136,7]
         box_preds, reg_targets, weights=reg_weights)  # [N, M]
     cls_losses = cls_loss_ftor(
         cls_preds, one_hot_targets, weights=cls_weights)  # [N, M]
     return loc_losses, cls_losses
 
 
-def prepare_loss_weights(labels,
+def prepare_loss_weights(labels ,
                          pos_cls_weight=1.0,
                          neg_cls_weight=1.0,
                          loss_norm_type=LossNormType.NormByNumPositives,
                          dtype=torch.float32):
     """get cls_weights and reg_weights from labels.
     """
-    cared = labels >= 0
-    # cared: [N, num_anchors]
+    cared = labels >= 0 # 目标anchor置１,dontcare置0,[2,total_anchors],label内dontcare为-1,其余为正负样本
+    # cared: [2, total_anchors]
     positives = labels > 0
     negatives = labels == 0
-    negative_cls_weights = negatives.type(dtype) * neg_cls_weight
-    cls_weights = negative_cls_weights + pos_cls_weight * positives.type(dtype)
-    reg_weights = positives.type(dtype)
+    negative_cls_weights = negatives.type(dtype) * neg_cls_weight # [2,total_anchors]
+    cls_weights = negative_cls_weights + pos_cls_weight * positives.type(dtype) # [2,total_anchors],这里正负样本权重相同,均为1,dontcare为0
+    reg_weights = positives.type(dtype) # [2,total_anchors],这里正样本回归权重为1,其余为0
     if loss_norm_type == LossNormType.NormByNumExamples:
         num_examples = cared.type(dtype).sum(1, keepdim=True)
         num_examples = torch.clamp(num_examples, min=1.0)
@@ -1094,8 +1125,8 @@ def prepare_loss_weights(labels,
         bbox_normalizer = positives.sum(1, keepdim=True).type(dtype)
         reg_weights /= torch.clamp(bbox_normalizer, min=1.0)
     elif loss_norm_type == LossNormType.NormByNumPositives:  # for focal loss
-        pos_normalizer = positives.sum(1, keepdim=True).type(dtype)
-        reg_weights /= torch.clamp(pos_normalizer, min=1.0)
+        pos_normalizer = positives.sum(1, keepdim=True).type(dtype) # 统计正样本数量,[2,1]
+        reg_weights /= torch.clamp(pos_normalizer, min=1.0) # 根据正样本数量对回归和分类权重进行归一化,[2,total_anchors]
         cls_weights /= torch.clamp(pos_normalizer, min=1.0)
     elif loss_norm_type == LossNormType.NormByNumPosNeg:
         pos_neg = torch.stack([positives, negatives], dim=-1).type(dtype)
@@ -1131,9 +1162,9 @@ def assign_weight_to_each_class(labels,
 def get_direction_target(anchors, reg_targets, one_hot=True):
     batch_size = reg_targets.shape[0]
     anchors = anchors.view(batch_size, -1, 7)
-    rot_gt = reg_targets[..., -1] + anchors[..., -1]
-    dir_cls_targets = (rot_gt > 0).long()
+    rot_gt = reg_targets[..., -1] + anchors[..., -1] # 真值
+    dir_cls_targets = (rot_gt > 0).long() # 用简单的判断标识对象朝向,逆时针为正,顺时针为负
     if one_hot:
         dir_cls_targets = torchplus.nn.one_hot(
             dir_cls_targets, 2, dtype=anchors.dtype)
-    return dir_cls_targets
+    return dir_cls_targets # 根据锚框与回归的偏差值可以得到朝向角或其补角,知道正负后可确定唯一角度

@@ -11,12 +11,12 @@ def build(sampler_config):
     groups = list(cfg.sample_groups)
     prepors = [
         preprocess_builder.build_db_preprocess(c)
-        for c in cfg.database_prep_steps
+        for c in cfg.database_prep_steps # 两种预处理方式依次使用
     ]
     db_prepor = DataBasePreprocessor(prepors)
-    rate = cfg.rate
-    grot_range = cfg.global_random_rotation_range_per_object
-    groups = [dict(g.name_to_max_num) for g in groups]
+    rate = cfg.rate # 1.0
+    grot_range = cfg.global_random_rotation_range_per_object # 每个目标全局随机旋转的角度
+    groups = [dict(g.name_to_max_num) for g in groups] #
     info_path = cfg.database_info_path
     with open(info_path, 'rb') as f:
         db_infos = pickle.load(f)

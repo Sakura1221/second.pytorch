@@ -178,14 +178,14 @@ class WeightedSmoothL1LocalizationLoss(Loss):
       loss: a float tensor of shape [batch_size, num_anchors] tensor
         representing the value of the loss function.
     """
-    diff = prediction_tensor - target_tensor
-    if self._code_weights is not None:
+    diff = prediction_tensor - target_tensor # 做差求误差
+    if self._code_weights is not None: # 为不同样本加权
       code_weights = self._code_weights.type_as(prediction_tensor)
       diff = code_weights.view(1, 1, -1) * diff
-    abs_diff = torch.abs(diff)
+    abs_diff = torch.abs(diff) # 求绝对值
     abs_diff_lt_1 = torch.le(abs_diff, 1 / (self._sigma**2)).type_as(abs_diff)
     loss = abs_diff_lt_1 * 0.5 * torch.pow(abs_diff * self._sigma, 2) \
-      + (abs_diff - 0.5 / (self._sigma**2)) * (1. - abs_diff_lt_1)
+      + (abs_diff - 0.5 / (self._sigma**2)) * (1. - abs_diff_lt_1) # 在原来的SmoothL1基础上增加了sigma参数
     if self._codewise:
       anchorwise_smooth_l1norm = loss
       if weights is not None:
@@ -194,7 +194,7 @@ class WeightedSmoothL1LocalizationLoss(Loss):
       anchorwise_smooth_l1norm = torch.sum(loss, 2)#  * weights
       if weights is not None:
         anchorwise_smooth_l1norm *= weights
-    return anchorwise_smooth_l1norm
+    return anchorwise_smooth_l1norm # 每个锚框每个特征的回归损失,负样本为0
 
 def _sigmoid_cross_entropy_with_logits(logits, labels):
   # to be compatible with tensorflow, we don't use ignore_idx
@@ -290,22 +290,22 @@ class SigmoidFocalClassificationLoss(Loss):
     if class_indices is not None:
       weights *= indices_to_dense_vector(class_indices,
             prediction_tensor.shape[2]).view(1, 1, -1).type_as(prediction_tensor)
-    per_entry_cross_ent = (_sigmoid_cross_entropy_with_logits(
+    per_entry_cross_ent = (_sigmoid_cross_entropy_with_logits( # 求交叉熵loss
         labels=target_tensor, logits=prediction_tensor))
-    prediction_probabilities = torch.sigmoid(prediction_tensor)
-    p_t = ((target_tensor * prediction_probabilities) +
+    prediction_probabilities = torch.sigmoid(prediction_tensor) # 预测张量经过sigmoid求概率
+    p_t = ((target_tensor * prediction_probabilities) + # 正确分类概率,正确类别对应识别概率,其他类别对应反概率
            ((1 - target_tensor) * (1 - prediction_probabilities)))
     modulating_factor = 1.0
-    if self._gamma:
-      modulating_factor = torch.pow(1.0 - p_t, self._gamma)
+    if self._gamma: # focal loss控制样本难易的参数
+      modulating_factor = torch.pow(1.0 - p_t, self._gamma) # 概率值大的，好分辨的权重小
     alpha_weight_factor = 1.0
-    if self._alpha is not None:
-      alpha_weight_factor = (target_tensor * self._alpha +
+    if self._alpha is not None: # focal loss控制样本不均的参数
+      alpha_weight_factor = (target_tensor * self._alpha + # 样本值多的权重小
                               (1 - target_tensor) * (1 - self._alpha))
 
     focal_cross_entropy_loss = (modulating_factor * alpha_weight_factor *
-                                per_entry_cross_ent)
-    return focal_cross_entropy_loss * weights
+                                per_entry_cross_ent) # 在原交叉熵loss上乘以加权系数
+    return focal_cross_entropy_loss * weights # 再乘以样本权重
 
 
 class SoftmaxFocalClassificationLoss(Loss):

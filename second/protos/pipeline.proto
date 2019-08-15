@@ -7,6 +7,7 @@ import "second/protos/model.proto";
 import "second/protos/train.proto";
 // Convenience message for configuring a training and eval pipeline. Allows all
 // of the pipeline parameters to be configured from one file.
+// 这个文件将所有需要的配置信息整合在了一起，形成一个框架
 message TrainEvalPipelineConfig {
   DetectionModel model = 1;
   InputReader train_input_reader = 2;

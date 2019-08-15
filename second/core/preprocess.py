@@ -16,12 +16,12 @@ import copy
 
 class BatchSampler:
     def __init__(self, sampled_list, name=None, epoch=None, shuffle=True, drop_reminder=False):
-        self._sampled_list = sampled_list
+        self._sampled_list = sampled_list # 采样对象，每个类别内的对象及信息
         self._indices = np.arange(len(sampled_list))
         if shuffle:
             np.random.shuffle(self._indices)
         self._idx = 0
-        self._example_num = len(sampled_list)
+        self._example_num = len(sampled_list) # 每个类别内对象的数量
         self._name = name
         self._shuffle = shuffle
         self._epoch = epoch
@@ -29,13 +29,13 @@ class BatchSampler:
         self._drop_reminder = drop_reminder
 
     def _sample(self, num):
-        if self._idx + num >= self._example_num:
+        if self._idx + num >= self._example_num: # 当采样序号超过总数时
             ret = self._indices[self._idx:].copy()
             self._reset()
         else:
             ret = self._indices[self._idx:self._idx + num]
             self._idx += num
-        return ret
+        return ret # 返回的是采样的对象序号
 
     def _reset(self):
         if self._name is not None:
@@ -45,8 +45,8 @@ class BatchSampler:
         self._idx = 0
 
     def sample(self, num):
-        indices = self._sample(num)
-        return [self._sampled_list[i] for i in indices]
+        indices = self._sample(num) # 用来采样的对象序号
+        return [self._sampled_list[i] for i in indices] # 返回采样对象的信息
         # return np.random.choice(self._sampled_list, num)
 
 
@@ -256,27 +256,27 @@ def noise_per_box(boxes, valid_mask, loc_noises, rot_noises):
     num_boxes = boxes.shape[0]
     num_tests = loc_noises.shape[1]
     box_corners = box_np_ops.box2d_to_corner_jit(boxes)
-    current_corners = np.zeros((4, 2), dtype=boxes.dtype)
-    rot_mat_T = np.zeros((2, 2), dtype=boxes.dtype)
+    current_corners = np.zeros((4, 2), dtype=boxes.dtype) # 鸟瞰图上４个角点
+    rot_mat_T = np.zeros((2, 2), dtype=boxes.dtype) # 旋转矩阵
     success_mask = -np.ones((num_boxes, ), dtype=np.int64)
     # print(valid_mask)
     for i in range(num_boxes):
         if valid_mask[i]:
             for j in range(num_tests):
-                current_corners[:] = box_corners[i]
-                current_corners -= boxes[i, :2]
-                _rotation_box2d_jit_(current_corners, rot_noises[i, j],
+                current_corners[:] = box_corners[i] # 真值框鸟瞰图4个角点坐标
+                current_corners -= boxes[i, :2] #　减去中心水平坐标
+                _rotation_box2d_jit_(current_corners, rot_noises[i, j], # 添加旋转扰动
                                      rot_mat_T)
-                current_corners += boxes[i, :2] + loc_noises[i, j, :2]
+                current_corners += boxes[i, :2] + loc_noises[i, j, :2] # 添加定位扰动
                 coll_mat = box_collision_test(
                     current_corners.reshape(1, 4, 2), box_corners)
-                coll_mat[0, i] = False
+                coll_mat[0, i] = False #　这次是一个一个判断是否碰撞，扰动后与原始框不算相撞，之后会进行替代
                 # print(coll_mat)
                 if not coll_mat.any():
                     success_mask[i] = j
                     box_corners[i] = current_corners
                     break
-    return success_mask
+    return success_mask # 返回的是不冲突扰动编号，若均冲突则不添加扰动(-1)
 
 
 @numba.njit
@@ -484,7 +484,7 @@ def box3d_transform_(boxes, loc_transform, rot_transform, valid_mask):
             boxes[i, 6] += rot_transform[i]
 
 
-def _select_transform(transform, indices):
+def _select_transform(transform, indices): # 根据索引完成相应转换
     result = np.zeros(
         (transform.shape[0], *transform.shape[2:]), dtype=transform.dtype)
     for i in range(transform.shape[0]):
@@ -597,7 +597,7 @@ def noise_per_object_v3_(gt_boxes,
                          global_random_rot_range=np.pi / 4,
                          num_try=100,
                          group_ids=None):
-    """random rotate or remove each groundtrutn independently.
+    """random rotate or remove each groundtruth independently.
     use kitti viewer to test this function points_transform_
 
     Args:
@@ -611,7 +611,7 @@ def noise_per_object_v3_(gt_boxes,
         global_random_rot_range = [
             -global_random_rot_range, global_random_rot_range
         ]
-    enable_grot = np.abs(global_random_rot_range[0] -
+    enable_grot = np.abs(global_random_rot_range[0] - # False
                          global_random_rot_range[1]) >= 1e-3
     if not isinstance(center_noise_std, (list, tuple, np.ndarray)):
         center_noise_std = [
@@ -620,16 +620,16 @@ def noise_per_object_v3_(gt_boxes,
     if valid_mask is None:
         valid_mask = np.ones((num_boxes, ), dtype=np.bool_)
     center_noise_std = np.array(center_noise_std, dtype=gt_boxes.dtype)
-    loc_noises = np.random.normal(
+    loc_noises = np.random.normal( # 定位扰动服从正态分布，每个对象有num_try个扰动数据，每个数据包含三个方向
         scale=center_noise_std, size=[num_boxes, num_try, 3])
     # loc_noises = np.random.uniform(
     #     -center_noise_std, center_noise_std, size=[num_boxes, num_try, 3])
     rot_noises = np.random.uniform(
-        rotation_perturb[0], rotation_perturb[1], size=[num_boxes, num_try])
-    gt_grots = np.arctan2(gt_boxes[:, 0], gt_boxes[:, 1])
+        rotation_perturb[0], rotation_perturb[1], size=[num_boxes, num_try]) # 在范围内均匀分布,每个对象都有num_try个旋转角扰动
+    gt_grots = np.arctan2(gt_boxes[:, 0], gt_boxes[:, 1]) # 根据中心点激光雷达下前后与左右坐标正切值，求绝对转角
     grot_lowers = global_random_rot_range[0] - gt_grots
     grot_uppers = global_random_rot_range[1] - gt_grots
-    global_rot_noises = np.random.uniform(
+    global_rot_noises = np.random.uniform( # 叠加全局旋转角扰动后的绝对转角扰动，由于全局转角扰动范围为[0.0,0.0]，单个对象绝对转角扰动保持不变
         grot_lowers[..., np.newaxis],
         grot_uppers[..., np.newaxis],
         size=[num_boxes, num_try])
@@ -650,14 +650,15 @@ def noise_per_object_v3_(gt_boxes,
                              gt_boxes[:, 6], group_centers, valid_mask)
         group_nums = np.array(list(group_id_num_dict.values()), dtype=np.int64)
 
-    origin = [0.5, 0.5, 0]
+    origin = [0.5, 0.5, 0] # 激光雷达坐标系下原点
+    # 真值框信息转换为8个角点[N,8,3](左前下，左前上，左后上，左后下，右前下，右前上，右后上，右后下)
     gt_box_corners = box_np_ops.center_to_corner_box3d(
         gt_boxes[:, :3],
         gt_boxes[:, 3:6],
         gt_boxes[:, 6],
         origin=origin,
         axis=2)
-    if group_ids is not None:
+    if group_ids is not None: # None
         if not enable_grot:
             selected_noise = noise_per_box_group(gt_boxes[:, [0, 1, 3, 4, 6]],
                                                  valid_mask, loc_noises,
@@ -667,22 +668,22 @@ def noise_per_object_v3_(gt_boxes,
                 gt_boxes[:, [0, 1, 3, 4, 6]], valid_mask, loc_noises,
                 rot_noises, group_nums, global_rot_noises)
     else:
-        if not enable_grot:
+        if not enable_grot: # True
             selected_noise = noise_per_box(gt_boxes[:, [0, 1, 3, 4, 6]],
-                                           valid_mask, loc_noises, rot_noises)
+                                           valid_mask, loc_noises, rot_noises) # 每一个真值不会碰撞的定位和旋转扰动索引
         else:
             selected_noise = noise_per_box_v2_(gt_boxes[:, [0, 1, 3, 4, 6]],
                                                valid_mask, loc_noises,
                                                rot_noises, global_rot_noises)
-    loc_transforms = _select_transform(loc_noises, selected_noise)
+    loc_transforms = _select_transform(loc_noises, selected_noise) # 根据索引选择扰动
     rot_transforms = _select_transform(rot_noises, selected_noise)
-    surfaces = box_np_ops.corner_to_surfaces_3d_jit(gt_box_corners)
+    surfaces = box_np_ops.corner_to_surfaces_3d_jit(gt_box_corners) # [N,6,4,3],6个面,每个面4个点
     if points is not None:
-        point_masks = points_in_convex_polygon_3d_jit(points[:, :3], surfaces)
-        points_transform_(points, gt_boxes[:, :3], point_masks, loc_transforms,
+        point_masks = points_in_convex_polygon_3d_jit(points[:, :3], surfaces) # 判断此帧点云的点是否在表面内
+        points_transform_(points, gt_boxes[:, :3], point_masks, loc_transforms, # 对添加了扰动的真值框内的点云坐标进行修改
                           rot_transforms, valid_mask)
 
-    box3d_transform_(gt_boxes, loc_transforms, rot_transforms, valid_mask)
+    box3d_transform_(gt_boxes, loc_transforms, rot_transforms, valid_mask) # 对添加了扰动的真值框坐标进行修改
 
 
 def noise_per_object_v2_(gt_boxes,

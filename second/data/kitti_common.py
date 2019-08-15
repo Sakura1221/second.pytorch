@@ -207,7 +207,7 @@ def get_kitti_image_info(path,
             add_difficulty_to_annos(image_info)
         return image_info
 
-    with futures.ThreadPoolExecutor(num_worker) as executor:
+    with futures.ThreadPoolExecutor(num_worker) as executor: # 异步运算加快速度
         image_infos = executor.map(map_func, image_ids)
     return list(image_infos)
 
@@ -666,7 +666,7 @@ def get_label_annos(label_folder, image_ids=None):
     return annos
 
 
-def anno_to_rbboxes(anno):
+def anno_to_rbboxes(anno): # 根据标签获得真值边界框
     loc = anno["location"]
     dims = anno["dimensions"]
     rots = anno["rotation_y"]

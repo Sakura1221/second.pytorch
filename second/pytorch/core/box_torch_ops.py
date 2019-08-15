@@ -22,21 +22,21 @@ def second_box_encode(boxes, anchors, encode_angle_to_vector=False, smooth_dim=F
     """
     xa, ya, za, wa, la, ha, ra = torch.split(anchors, 1, dim=-1)
     xg, yg, zg, wg, lg, hg, rg = torch.split(boxes, 1, dim=-1)
-    za = za + ha / 2
+    za = za + ha / 2 # z方向最高坐标
     zg = zg + hg / 2
-    diagonal = torch.sqrt(la**2 + wa**2)
-    xt = (xg - xa) / diagonal
+    diagonal = torch.sqrt(la**2 + wa**2) # 对角线
+    xt = (xg - xa) / diagonal # 水平方向归一化
     yt = (yg - ya) / diagonal
-    zt = (zg - za) / ha
-    if smooth_dim:
+    zt = (zg - za) / ha #　垂直方向归一化
+    if smooth_dim: # 尺寸线性编码方式
         lt = lg / la - 1
         wt = wg / wa - 1
         ht = hg / ha - 1
-    else:
+    else:          # 尺寸对数编码方式
         lt = torch.log(lg / la)
         wt = torch.log(wg / wa)
         ht = torch.log(hg / ha)
-    if encode_angle_to_vector:
+    if encode_angle_to_vector: # 方向三角编码方式
         rgx = torch.cos(rg)
         rgy = torch.sin(rg)
         rax = torch.cos(ra)
@@ -45,7 +45,7 @@ def second_box_encode(boxes, anchors, encode_angle_to_vector=False, smooth_dim=F
         rty = rgy - ray
         return torch.cat([xt, yt, zt, wt, lt, ht, rtx, rty], dim=-1)
     else:
-        rt = rg - ra
+        rt = rg - ra            # 方向线性编码方式
         return torch.cat([xt, yt, zt, wt, lt, ht, rt], dim=-1)
 
     # rt = rg - ra

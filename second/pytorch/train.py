@@ -1,5 +1,5 @@
 import os
-import pathlib
+import pathlib # 表达文件系统路径的类
 import pickle
 import shutil
 import time
@@ -83,12 +83,12 @@ def example_convert_to_torch(example, dtype=torch.float32,
     return example_torch
 
 
-def train(config_path,
-          model_dir,
+def train(config_path, # 附加配置文件路径
+          model_dir, # 模型保存路径
           result_path=None,
           create_folder=False,
-          display_step=50,
-          summary_step=5,
+          display_step=50, # 结果显示步长
+          summary_step=5, # 数据统计步长
           pickle_result=True):
     """train a VoxelNet model specified by a config file.
     """
@@ -96,32 +96,32 @@ def train(config_path,
         if pathlib.Path(model_dir).exists():
             model_dir = torchplus.train.create_folder(model_dir)
 
-    model_dir = pathlib.Path(model_dir)
-    model_dir.mkdir(parents=True, exist_ok=True)
-    eval_checkpoint_dir = model_dir / 'eval_checkpoints'
-    eval_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    model_dir = pathlib.Path(model_dir) # 将字符串打包成路径
+    model_dir.mkdir(parents=True, exist_ok=True) # 根据路径创建目录,前一个参数表示创建父目录,后一个表示目录存在时不创建也不报错
+    eval_checkpoint_dir = model_dir / 'eval_checkpoints' # 检查点文件保存路径
+    eval_checkpoint_dir.mkdir(parents=True, exist_ok=True) # 创建目录
     if result_path is None:
         result_path = model_dir / 'results'
     config_file_bkp = "pipeline.config"
-    config = pipeline_pb2.TrainEvalPipelineConfig()
+    config = pipeline_pb2.TrainEvalPipelineConfig() # 配置文件整合框架
     with open(config_path, "r") as f:
         proto_str = f.read()
-        text_format.Merge(proto_str, config)
-    shutil.copyfile(config_path, str(model_dir / config_file_bkp))
-    input_cfg = config.train_input_reader
+        text_format.Merge(proto_str, config) # 向配置文件框架内传参
+    shutil.copyfile(config_path, str(model_dir / config_file_bkp)) # 复制一份配置文件
+    input_cfg = config.train_input_reader # 配置文件4个部分,训练输入,评价输入,模型参数,训练配置
     eval_input_cfg = config.eval_input_reader
     model_cfg = config.model.second
     train_cfg = config.train_config
 
-    class_names = list(input_cfg.class_names)
+    class_names = list(input_cfg.class_names) # 选择训练类别
     ######################
     # BUILD VOXEL GENERATOR
     ######################
-    voxel_generator = voxel_builder.build(model_cfg.voxel_generator)
+    voxel_generator = voxel_builder.build(model_cfg.voxel_generator) # 生成体素，输入配置参数，输出类的实例
     ######################
     # BUILD TARGET ASSIGNER
     ######################
-    bv_range = voxel_generator.point_cloud_range[[0, 1, 3, 4]]
+    bv_range = voxel_generator.point_cloud_range[[0, 1, 3, 4]] # 鸟瞰图范围
     box_coder = box_coder_builder.build(model_cfg.box_coder)
     target_assigner_cfg = model_cfg.target_assigner
     target_assigner = target_assigner_builder.build(target_assigner_cfg,
@@ -130,10 +130,10 @@ def train(config_path,
     # BUILD NET
     ######################
     center_limit_range = model_cfg.post_center_limit_range
-    net = second_builder.build(model_cfg, voxel_generator, target_assigner)
-    net.cuda()
+    net = second_builder.build(model_cfg, voxel_generator, target_assigner) # 模型结构的搭建在此
+    net.cuda() # 使用GPU运算
     # net_train = torch.nn.DataParallel(net).cuda()
-    print("num_trainable parameters:", len(list(net.parameters())))
+    print("num_trainable parameters:", len(list(net.parameters()))) # 需要训练的参数
     # for n, p in net.named_parameters():
     #     print(n, p.shape)
     ######################
@@ -166,7 +166,7 @@ def train(config_path,
     # PREPARE INPUT
     ######################
 
-    dataset = input_reader_builder.build(
+    dataset = input_reader_builder.build( # 将dataset封装成了类，与内置的dataset类一致，方便后面dataloader加载
         input_cfg,
         model_cfg,
         training=True,
@@ -184,7 +184,7 @@ def train(config_path,
         np.random.seed(time_seed + worker_id)
         print(f"WORKER {worker_id} seed:", np.random.get_state()[1][0])
 
-    dataloader = torch.utils.data.DataLoader(
+    dataloader = torch.utils.data.DataLoader( # 加载自建dataset里的数据
         dataset,
         batch_size=input_cfg.batch_size,
         shuffle=True,
@@ -199,12 +199,12 @@ def train(config_path,
         num_workers=eval_input_cfg.num_workers,
         pin_memory=False,
         collate_fn=merge_second_batch)
-    data_iter = iter(dataloader)
+    data_iter = iter(dataloader) # 将dataloader转化成可迭代对象，方便后续next迭代调用
 
     ######################
     # TRAINING
     ######################
-    log_path = model_dir / 'log.txt'
+    log_path = model_dir / 'log.txt' # 写入日志文件
     logf = open(log_path, 'a')
     logf.write(proto_str)
     logf.write("\n")
@@ -214,7 +214,7 @@ def train(config_path,
 
     total_step_elapsed = 0
     remain_steps = train_cfg.steps - net.get_global_step()
-    t = time.time()
+    t = time.time() # 训练起始时间
     ckpt_start_time = t
 
     total_loop = train_cfg.steps // train_cfg.steps_per_eval + 1
@@ -225,26 +225,26 @@ def train(config_path,
         total_loop -= 1
     mixed_optimizer.zero_grad()
     try:
-        for _ in range(total_loop):
+        for _ in range(total_loop): # 32
             if total_step_elapsed + train_cfg.steps_per_eval > train_cfg.steps:
-                steps = train_cfg.steps % train_cfg.steps_per_eval
+                steps = train_cfg.steps % train_cfg.steps_per_eval # 总训练次数296960
             else:
-                steps = train_cfg.steps_per_eval
-            for step in range(steps):
-                lr_scheduler.step()
+                steps = train_cfg.steps_per_eval # 评估步长,steps=9280
+            for step in range(steps): # 9280
+                lr_scheduler.step() # 学习率更新
                 try:
-                    example = next(data_iter)
+                    example = next(data_iter) # 按照索引迭代
                 except StopIteration:
                     print("end epoch")
                     if clear_metrics_every_epoch:
                         net.clear_metrics()
                     data_iter = iter(dataloader)
                     example = next(data_iter)
-                example_torch = example_convert_to_torch(example, float_dtype)
+                example_torch = example_convert_to_torch(example, float_dtype) # 数据转换成张量，这是后续用于处理的数据
 
                 batch_size = example["anchors"].shape[0]
 
-                ret_dict = net(example_torch)
+                ret_dict = net(example_torch) # 向建好的网络输入张量数据，经过网络处理输出预测值和loss
 
                 # box_preds = ret_dict["box_preds"]
                 cls_preds = ret_dict["cls_preds"]
@@ -258,19 +258,19 @@ def train(config_path,
                 dir_loss_reduced = ret_dict["dir_loss_reduced"]
                 cared = ret_dict["cared"]
                 labels = example_torch["labels"]
-                if train_cfg.enable_mixed_precision:
+                if train_cfg.enable_mixed_precision: # False
                     loss *= loss_scale
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(net.parameters(), 10.0)
-                mixed_optimizer.step()
-                mixed_optimizer.zero_grad()
-                net.update_global_step()
+                loss.backward() # loss反向传递
+                torch.nn.utils.clip_grad_norm_(net.parameters(), 10.0) # 梯度剪裁,控制梯度爆炸
+                mixed_optimizer.step() # 模型参数更新
+                mixed_optimizer.zero_grad() # 梯度清零
+                net.update_global_step() # 优化次数更新
                 net_metrics = net.update_metrics(cls_loss_reduced,
                                                  loc_loss_reduced, cls_preds,
                                                  labels, cared)
 
-                step_time = (time.time() - t)
-                t = time.time()
+                step_time = (time.time() - t) # 一次训练计时结束
+                t = time.time() # 开始新一轮训练计时
                 metrics = {}
                 num_pos = int((labels > 0)[0].float().sum().cpu().numpy())
                 num_neg = int((labels == 0)[0].float().sum().cpu().numpy())
@@ -279,7 +279,7 @@ def train(config_path,
                 else:
                     num_anchors = int(example_torch['anchors_mask'][0].sum())
                 global_step = net.get_global_step()
-                if global_step % display_step == 0:
+                if global_step % display_step == 0: # display=50,显示一次训练结果
                     loc_loss_elem = [
                         float(loc_loss[:, :, i].sum().detach().cpu().numpy() /
                               batch_size) for i in range(loc_loss.shape[-1])
@@ -329,7 +329,7 @@ def train(config_path,
                     log_str = ', '.join(metrics_str_list)
                     print(log_str, file=logf)
                     print(log_str)
-                ckpt_elasped_time = time.time() - ckpt_start_time
+                ckpt_elasped_time = time.time() - ckpt_start_time # 一个checkpoint(50steps)所耗时间
                 if ckpt_elasped_time > train_cfg.save_checkpoints_secs:
                     torchplus.train.save_models(model_dir, [net, optimizer],
                                                 net.get_global_step())
@@ -341,7 +341,8 @@ def train(config_path,
             # Ensure that all evaluation points are saved forever
             torchplus.train.save_models(eval_checkpoint_dir, [net, optimizer], net.get_global_step(), max_to_keep=100)
 
-            net.eval()
+            # 模型评估
+            net.eval() # pytorch内置的 Module方法,将网络参数的traing设为False
             result_path_step = result_path / f"step_{net.get_global_step()}"
             result_path_step.mkdir(parents=True, exist_ok=True)
             print("#################################")
@@ -352,13 +353,13 @@ def train(config_path,
             print("#################################", file=logf)
             print("Generate output labels...")
             print("Generate output labels...", file=logf)
-            t = time.time()
+            t = time.time() # 评估计时开始
             dt_annos = []
             prog_bar = ProgressBar()
             prog_bar.start(len(eval_dataset) // eval_input_cfg.batch_size + 1)
-            for example in iter(eval_dataloader):
+            for example in iter(eval_dataloader): # 评估喂数据
                 example = example_convert_to_torch(example, float_dtype)
-                if pickle_result:
+                if pickle_result: # True
                     dt_annos += predict_kitti_to_anno(
                         net, example, class_names, center_limit_range,
                         model_cfg.lidar_input)
@@ -369,7 +370,7 @@ def train(config_path,
 
                 prog_bar.print_bar()
 
-            sec_per_ex = len(eval_dataset) / (time.time() - t)
+            sec_per_ex = len(eval_dataset) / (time.time() - t) # 每帧数据平均用时
             print(f"avg forward time per example: {net.avg_forward_time:.3f}")
             print(
                 f"avg postprocess time per example: {net.avg_postprocess_time:.3f}"
@@ -385,13 +386,14 @@ def train(config_path,
             ]
             if not pickle_result:
                 dt_annos = kitti.get_label_annos(result_path_step)
+            # 官方评价指标
             result, mAPbbox, mAPbev, mAP3d, mAPaos = get_official_eval_result(gt_annos, dt_annos, class_names,
                                                                               return_data=True)
             print(result, file=logf)
             print(result)
             writer.add_text('eval_result', result, global_step)
 
-            for i, class_name in enumerate(class_names):
+            for i, class_name in enumerate(class_names): # 要记录的评估参数
                 writer.add_scalar('bev_ap:{}'.format(class_name), mAPbev[i, 1, 0], global_step)
                 writer.add_scalar('3d_ap:{}'.format(class_name), mAP3d[i, 1, 0], global_step)
                 writer.add_scalar('aos_ap:{}'.format(class_name), mAPaos[i, 1, 0], global_step)
@@ -499,7 +501,7 @@ def predict_kitti_to_anno(net,
             # write pred to file
             label_preds = preds_dict["label_preds"].detach().cpu().numpy()
             # label_preds = np.zeros([box_2d_preds.shape[0]], dtype=np.int32)
-            anno = kitti.get_start_result_anno()
+            anno = kitti.get_start_result_anno() # 初始化字典元素
             num_example = 0
             for box, box_lidar, bbox, score, label in zip(
                     box_preds, box_preds_lidar, box_2d_preds, scores,
@@ -521,7 +523,7 @@ def predict_kitti_to_anno(net,
                 anno["truncated"].append(0.0)
                 anno["occluded"].append(0)
                 anno["alpha"].append(-np.arctan2(-box_lidar[1], box_lidar[0]) +
-                                     box[6])
+                                     box[6]) # FIXME 这里采用了雷达坐标,与相机坐标差别不大
                 anno["bbox"].append(bbox)
                 anno["dimensions"].append(box[3:6])
                 anno["location"].append(box[:3])
@@ -570,6 +572,7 @@ def evaluate(config_path,
         proto_str = f.read()
         text_format.Merge(proto_str, config)
 
+    # 配置文件读取
     input_cfg = config.eval_input_reader
     model_cfg = config.model.second
     train_cfg = config.train_config
@@ -578,32 +581,32 @@ def evaluate(config_path,
     ######################
     # BUILD VOXEL GENERATOR
     ######################
-    voxel_generator = voxel_builder.build(model_cfg.voxel_generator)
+    voxel_generator = voxel_builder.build(model_cfg.voxel_generator) # 体素生成类
     bv_range = voxel_generator.point_cloud_range[[0, 1, 3, 4]]
     box_coder = box_coder_builder.build(model_cfg.box_coder)
     target_assigner_cfg = model_cfg.target_assigner
-    target_assigner = target_assigner_builder.build(target_assigner_cfg,
+    target_assigner = target_assigner_builder.build(target_assigner_cfg, # 锚框生成类
                                                     bv_range, box_coder)
 
-    net = second_builder.build(model_cfg, voxel_generator, target_assigner)
+    net = second_builder.build(model_cfg, voxel_generator, target_assigner) # 搭建网络
     net.cuda()
-    if train_cfg.enable_mixed_precision:
+    if train_cfg.enable_mixed_precision: # False
         net.half()
         net.metrics_to_float()
         net.convert_norm_to_float(net)
 
     if ckpt_path is None:
-        torchplus.train.try_restore_latest_checkpoints(model_dir, [net])
+        torchplus.train.try_restore_latest_checkpoints(model_dir, [net]) # 模型权重赋值
     else:
         torchplus.train.restore(ckpt_path, net)
 
-    eval_dataset = input_reader_builder.build(
+    eval_dataset = input_reader_builder.build( # 评价数据集准备
         input_cfg,
         model_cfg,
         training=False,
         voxel_generator=voxel_generator,
         target_assigner=target_assigner)
-    eval_dataloader = torch.utils.data.DataLoader(
+    eval_dataloader = torch.utils.data.DataLoader( #　数据集架加载
         eval_dataset,
         batch_size=input_cfg.batch_size,
         shuffle=False,
@@ -611,40 +614,40 @@ def evaluate(config_path,
         pin_memory=False,
         collate_fn=merge_second_batch)
 
-    if train_cfg.enable_mixed_precision:
+    if train_cfg.enable_mixed_precision: # False
         float_dtype = torch.float16
     else:
         float_dtype = torch.float32
 
-    net.eval()
+    net.eval() # pytorch内置Module的方法,将网络参数的training设为False
     result_path_step = result_path / f"step_{net.get_global_step()}"
     result_path_step.mkdir(parents=True, exist_ok=True)
-    t = time.time()
+    t = time.time() # 推理计时开始
     dt_annos = []
     global_set = None
     print("Generate output labels...")
-    bar = ProgressBar()
+    bar = ProgressBar() # 处理状态条
     bar.start(len(eval_dataset) // input_cfg.batch_size + 1)
 
     for example in iter(eval_dataloader):
         example = example_convert_to_torch(example, float_dtype)
         if pickle_result:
-            dt_annos += predict_kitti_to_anno(
+            dt_annos += predict_kitti_to_anno( # 数据预测并返回结果标签
                 net, example, class_names, center_limit_range,
                 model_cfg.lidar_input, global_set)
-        else:
+        else: #  # 数据预测并返回结果到文件
             _predict_kitti_to_file(net, example, result_path_step, class_names,
                                    center_limit_range, model_cfg.lidar_input)
         bar.print_bar()
 
-    sec_per_example = len(eval_dataset) / (time.time() - t)
+    sec_per_example = len(eval_dataset) / (time.time() - t) # 平均推理时间
     print(f'generate label finished({sec_per_example:.2f}/s). start eval:')
 
     print(f"avg forward time per example: {net.avg_forward_time:.3f}")
     print(f"avg postprocess time per example: {net.avg_postprocess_time:.3f}")
-    if not predict_test:
+    if not predict_test: # True,预测模式不需要输出评价参数值
         gt_annos = [info["annos"] for info in eval_dataset.dataset.kitti_infos]
-        if not pickle_result:
+        if not pickle_result: # False,标签模式直接打印结果,pkl模式保存文件
             dt_annos = kitti.get_label_annos(result_path_step)
         result = get_official_eval_result(gt_annos, dt_annos, class_names)
         print(result)

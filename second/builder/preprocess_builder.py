@@ -1,7 +1,7 @@
 import second.core.preprocess as prep
 
 def build_db_preprocess(db_prep_config):
-    prep_type = db_prep_config.WhichOneof('database_preprocessing_step')
+    prep_type = db_prep_config.WhichOneof('database_preprocessing_step') # protobuf语法，用来检查哪个字段被设置，与oneof对应
 
     if prep_type == 'filter_by_difficulty':
         cfg = db_prep_config.filter_by_difficulty

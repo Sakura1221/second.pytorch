@@ -38,22 +38,22 @@ def second_box_encode(boxes, anchors, encode_angle_to_vector=False, smooth_dim=F
     # need to convert boxes to z-center format
     xa, ya, za, wa, la, ha, ra = np.split(anchors, 7, axis=-1)
     xg, yg, zg, wg, lg, hg, rg = np.split(boxes, 7, axis=-1)
-    zg = zg + hg / 2
+    zg = zg + hg / 2 # z方向最高坐标
     za = za + ha / 2
-    diagonal = np.sqrt(la**2 + wa**2)  # 4.3
-    xt = (xg - xa) / diagonal
+    diagonal = np.sqrt(la**2 + wa**2)  # 对角线
+    xt = (xg - xa) / diagonal # 水平方向偏移归一化
     yt = (yg - ya) / diagonal
 
-    zt = (zg - za) / ha  # 1.6
-    if smooth_dim:
+    zt = (zg - za) / ha  # 垂直方向偏移归一化
+    if smooth_dim: # 尺寸偏移线性编码
         lt = lg / la - 1
         wt = wg / wa - 1
         ht = hg / ha - 1
-    else:
+    else: # 尺寸偏移对数编码
         lt = np.log(lg / la)
         wt = np.log(wg / wa)
         ht = np.log(hg / ha)
-    if encode_angle_to_vector:
+    if encode_angle_to_vector: # 三角方式编码方向角偏移
         rgx = np.cos(rg)
         rgy = np.sin(rg)
         rax = np.cos(ra)
@@ -61,7 +61,7 @@ def second_box_encode(boxes, anchors, encode_angle_to_vector=False, smooth_dim=F
         rtx = rgx - rax
         rty = rgy - ray
         return np.concatenate([xt, yt, zt, wt, lt, ht, rtx, rty], axis=-1)
-    else:
+    else: # 线性方式编码方向角偏移
         rt = rg - ra
         return np.concatenate([xt, yt, zt, wt, lt, ht, rt], axis=-1)
 
@@ -516,10 +516,10 @@ def get_frustum_v2(bboxes, C, near_clip=0.001, far_clip=100):
     return ret_xyz
 
 
-def create_anchors_3d_stride(feature_size,
-                             sizes=[1.6, 3.9, 1.56],
-                             anchor_strides=[0.4, 0.4, 0.0],
-                             anchor_offsets=[0.2, -39.8, -1.78],
+def create_anchors_3d_stride(feature_size, # [1,248,216],zyx
+                             sizes=[1.6, 3.9, 1.56], # xyz,wlh,前后左右上下
+                             anchor_strides=[0.4, 0.4, 0.0], # [0.32,0.32,0], xyz
+                             anchor_offsets=[0.2, -39.8, -1.78], # [0.16,-39.52,-1.78],　锚点坐标,xmin,ymin,zmin
                              rotations=[0, np.pi / 2],
                              dtype=np.float32):
     """
@@ -536,25 +536,26 @@ def create_anchors_3d_stride(feature_size,
     z_centers = np.arange(feature_size[0], dtype=dtype)
     y_centers = np.arange(feature_size[1], dtype=dtype)
     x_centers = np.arange(feature_size[2], dtype=dtype)
-    z_centers = z_centers * z_stride + z_offset
-    y_centers = y_centers * y_stride + y_offset
-    x_centers = x_centers * x_stride + x_offset
+    z_centers = z_centers * z_stride + z_offset # 中心点在3个维度上的坐标 # -1.78, (1)
+    y_centers = y_centers * y_stride + y_offset # [-39.52, -39.2, ..., 39.52] stride = 0.32, (248)
+    x_centers = x_centers * x_stride + x_offset # [0.16, 0.48, ..., 68.96] stride = 0.32, (216)
     sizes = np.reshape(np.array(sizes, dtype=dtype), [-1, 3])
-    rotations = np.array(rotations, dtype=dtype)
-    rets = np.meshgrid(
+    rotations = np.array(rotations, dtype=dtype) # [0,pi/2]
+    rets = np.meshgrid( # 通过4个相同格式的矩阵编码表示4维张量 list[array[216,248,1,2]*4]
         x_centers, y_centers, z_centers, rotations, indexing='ij')
     tile_shape = [1] * 5
     tile_shape[-2] = int(sizes.shape[0])
-    for i in range(len(rets)):
-        rets[i] = np.tile(rets[i][..., np.newaxis, :], tile_shape)
-        rets[i] = rets[i][..., np.newaxis]  # for concat
+    for i in range(len(rets)): # 遍历赋值,4维扩展至5维
+        rets[i] = np.tile(rets[i][..., np.newaxis, :], tile_shape) # array[216,248,1,1,2]*4
+        rets[i] = rets[i][..., np.newaxis]  # for concat, array[216,248,1,1,2,1]*4
     sizes = np.reshape(sizes, [1, 1, 1, -1, 1, 3])
-    tile_size_shape = list(rets[0].shape)
+    tile_size_shape = list(rets[0].shape) # (216,248,1,1,2,1)
     tile_size_shape[3] = 1
-    sizes = np.tile(sizes, tile_size_shape)
-    rets.insert(3, sizes)
-    ret = np.concatenate(rets, axis=-1)
-    return np.transpose(ret, [2, 1, 0, 3, 4, 5])
+    sizes = np.tile(sizes, tile_size_shape) # 按照目标格式复制,wlh array[216,248,1,1,2,3]
+    rets.insert(3, sizes) # list[array[216,248,1,1,2,1],array[...,1],array[...,1],array[...,3],array[...,1]]
+    ret = np.concatenate(rets, axis=-1) # 沿着最后一个维度相加 array[216,248,1,1,2,7]
+    # [z_nums,y_nums,x_nums,1,rotation_nums,[xyz_center+sizes+rotation]]
+    return np.transpose(ret, [2, 1, 0, 3, 4, 5]) # array[1,248,216,1,2,7],[zyx_idx,1,r_idx,(xyz_lidar,wlh,r)]
 
 
 def create_anchors_3d_range(feature_size,
@@ -770,9 +771,9 @@ def image_box_region_area(img_cumsum, bbox):
 
 @numba.jit(nopython=True)
 def sparse_sum_for_anchors_mask(coors, shape):
-    ret = np.zeros(shape, dtype=np.float32)
+    ret = np.zeros(shape, dtype=np.float32) # 初始化体素标志为0
     for i in range(coors.shape[0]):
-        ret[coors[i, 1], coors[i, 2]] += 1
+        ret[coors[i, 1], coors[i, 2]] += 1 # 根据索引确定体素坐标(y,x),对应位置标志修改为1
     return ret
 
 
@@ -801,7 +802,7 @@ def fused_get_anchors_area(dense_map, anchors_bv, stride, offset,
         IA = dense_map[anchor_coor[1], anchor_coor[0]]
         IB = dense_map[anchor_coor[3], anchor_coor[0]]
         IC = dense_map[anchor_coor[1], anchor_coor[2]]
-        ret[i] = ID - IB - IC + IA
+        ret[i] = ID - IB - IC + IA # 统计锚框内采样体素的数量
     return ret
 
 

@@ -26,7 +26,7 @@ class VoxelGenerator:
             points, self._voxel_size, self._point_cloud_range,
             self._max_num_points, True, max_voxels)
 
-    @property
+    @property # 装饰器,可以将方法变成属性调用
     def voxel_size(self):
         return self._voxel_size
 

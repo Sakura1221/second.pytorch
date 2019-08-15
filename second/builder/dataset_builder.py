@@ -50,10 +50,10 @@ def build(input_reader_config,
     if not isinstance(input_reader_config, input_reader_pb2.InputReader):
         raise ValueError('input_reader_config not of type '
                          'input_reader_pb2.InputReader.')
-    generate_bev = model_config.use_bev
-    without_reflectivity = model_config.without_reflectivity
-    num_point_features = model_config.num_point_features
-    out_size_factor = model_config.rpn.layer_strides[0] // model_config.rpn.upsample_strides[0]
+    generate_bev = model_config.use_bev # False
+    without_reflectivity = model_config.without_reflectivity # True
+    num_point_features = model_config.num_point_features # 4
+    out_size_factor = model_config.rpn.layer_strides[0] // model_config.rpn.upsample_strides[0] # 2
 
     cfg = input_reader_config
     db_sampler_cfg = input_reader_config.database_sampler
@@ -64,13 +64,12 @@ def build(input_reader_config,
     u_db_sampler = None
     if len(u_db_sampler_cfg.sample_groups) > 0:  # enable sample
         u_db_sampler = dbsampler_builder.build(u_db_sampler_cfg)
-    grid_size = voxel_generator.grid_size
-    # [352, 400]
+    grid_size = voxel_generator.grid_size # [432, 496, 1]
     feature_map_size = grid_size[:2] // out_size_factor
-    feature_map_size = [*feature_map_size, 1][::-1]
+    feature_map_size = [*feature_map_size, 1][::-1] # [1, 248, 216]
 
     prep_func = partial(
-        prep_pointcloud,
+        prep_pointcloud, # 核心函数
         root_path=cfg.kitti_root_path,
         class_names=list(cfg.class_names),
         voxel_generator=voxel_generator,
@@ -78,7 +77,7 @@ def build(input_reader_config,
         training=training,
         max_voxels=cfg.max_number_of_voxels,
         remove_outside_points=False,
-        remove_unknown=cfg.remove_unknown_examples,
+        remove_unknown=cfg.remove_unknown_examples, # False
         create_targets=training,
         shuffle_points=cfg.shuffle_points,
         gt_rotation_noise=list(cfg.groundtruth_rotation_uniform_noise),
@@ -88,19 +87,19 @@ def build(input_reader_config,
         global_loc_noise_std=(0.2, 0.2, 0.2),
         global_random_rot_range=list(
             cfg.global_random_rotation_range_per_object),
-        db_sampler=db_sampler,
-        unlabeled_db_sampler=u_db_sampler,
+        db_sampler=db_sampler, # 数据库预处理类实例
+        unlabeled_db_sampler=u_db_sampler, # None
         generate_bev=generate_bev,
         without_reflectivity=without_reflectivity,
         num_point_features=num_point_features,
         anchor_area_threshold=cfg.anchor_area_threshold,
         gt_points_drop=cfg.groundtruth_points_drop_percentage,
         gt_drop_max_keep=cfg.groundtruth_drop_max_keep_points,
-        remove_points_after_sample=cfg.remove_points_after_sample,
-        remove_environment=cfg.remove_environment,
+        remove_points_after_sample=cfg.remove_points_after_sample, # False
+        remove_environment=cfg.remove_environment, # False
         use_group_id=cfg.use_group_id,
         out_size_factor=out_size_factor)
-    dataset = KittiDataset(
+    dataset = KittiDataset( # 数据集类传参实例化
         info_path=cfg.kitti_info_path,
         root_path=cfg.kitti_root_path,
         num_point_features=num_point_features,

@@ -91,7 +91,7 @@ TrainEvalPipelineConfig = _reflection.GeneratedProtocolMessageType('TrainEvalPip
   DESCRIPTOR = _TRAINEVALPIPELINECONFIG,
   __module__ = 'second.protos.pipeline_pb2'
   # @@protoc_insertion_point(class_scope:second.protos.TrainEvalPipelineConfig)
-  ))
+  )) # 这个是根据proto生成的文件,直接在此处调用,具体参数直接看proto文件即可,使用protobuf速度更快
 _sym_db.RegisterMessage(TrainEvalPipelineConfig)
 
 

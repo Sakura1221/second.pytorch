@@ -39,7 +39,7 @@ class DatasetWrapper(Dataset):
         return len(self._dataset)
 
     def __getitem__(self, idx):
-        return self._dataset[idx]
+        return self._dataset[idx] # 调用dataset内的__getitem__方法
 
     @property
     def dataset(self):

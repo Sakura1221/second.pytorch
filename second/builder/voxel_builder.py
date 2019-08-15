@@ -17,7 +17,7 @@ def build(voxel_config):
         ValueError: On invalid input reader proto.
         ValueError: If no input paths are specified.
     """
-    if not isinstance(voxel_config, (voxel_generator_pb2.VoxelGenerator)):
+    if not isinstance(voxel_config, (voxel_generator_pb2.VoxelGenerator)): # 数据类型检查
         raise ValueError('input_reader_config not of type '
                          'input_reader_pb2.InputReader.')
     voxel_generator = VoxelGenerator(
